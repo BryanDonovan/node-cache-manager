@@ -759,6 +759,170 @@ describe("multiCaching", function() {
                     });
                 });
             });
+
+            context("when we pass in an isReturnableValue function to the multicaching constructor", function() {
+                var testCallbacks = {
+                    isReturnableValue: function(value) {
+                        return value !== 'do_not_return_this' && value !== undefined;
+                    }
+                };
+
+                function getValue(name, cb) {
+                    process.nextTick(function() {
+                        if (name === 'foo') {
+                            cb(null, 'return_this');
+                        } else {
+                            cb(null, 'do_not_return_this');
+                        }
+                    });
+                }
+
+                function getCachedValue(name, cb) {
+                    multiCache.wrap(key, function(cacheCb) {
+                        getValue(name, function(err, result) {
+                            cacheCb(err, result);
+                        });
+                    }, cb);
+                }
+
+                beforeEach(function() {
+                    sinon.spy(testCallbacks, 'isReturnableValue');
+                    multiCache = multiCaching([memoryCache3], {isReturnableValue: testCallbacks.isReturnableValue});
+                    sinon.spy(memoryCache3.store, 'get');
+                });
+
+                afterEach(function() {
+                    memoryCache3.store.get.restore();
+                    testCallbacks.isReturnableValue.restore();
+                });
+
+                it("returns allowed values", function(done) {
+                    var name = 'foo';
+
+                    getCachedValue(name, function(err) {
+                        checkErr(err);
+                        assert.ok(memoryCache3.store.get.called);
+
+                        assert.ok(testCallbacks.isReturnableValue.calledOnce);
+
+                        getCachedValue(name, function(err, value) {
+                            checkErr(err);
+
+                            assert.equal('return_this', value);
+
+                            done();
+                        });
+                    });
+                });
+
+                it("returns non-allowed values because it's the only store", function(done) {
+                    var name = 'bar';
+
+                    getCachedValue(name, function(err, value) {
+                        checkErr(err);
+
+                        assert.ok(memoryCache3.store.get.calledOnce);
+
+                        assert.equal('do_not_return_this', value);
+
+                        getCachedValue(name, function(err, value) {
+                            checkErr(err);
+
+                            assert.equal('do_not_return_this', value);
+
+                            done();
+                        });
+                    });
+                });
+            });
+
+            context("when an underlying store has its own isReturnableValue function", function() {
+                var memoryCache5;
+
+                var testCallbacks = {
+                    isReturnableValue: function(value) {
+                        var x = value !== 'do_not_return_this' && value !== undefined;
+                        return x;
+                    }
+                };
+
+                function getValue(name, cb) {
+                    process.nextTick(function() {
+                        if (name === 'foo') {
+                            cb(null, 'return_this');
+                        } else {
+                            cb(null, 'do_not_return_this');
+                        }
+                    });
+                }
+
+                function getCachedValue(name, cb) {
+                    multiCache.wrap(key, function(cacheCb) {
+                        getValue(name, function(err, result) {
+                            cacheCb(err, result);
+                        });
+                    }, cb);
+                }
+
+                beforeEach(function() {
+                    sinon.spy(testCallbacks, 'isReturnableValue');
+                    memoryCache5 = caching({
+                        store: 'memory',
+                        ttl: memoryTtl
+                    });
+
+                    // This simulates how a store would sets its
+                    // isReturnableValue function:
+                    memoryCache5.store.isReturnableValue = testCallbacks.isReturnableValue;
+
+                    multiCache = multiCaching([memoryCache5]);
+                    sinon.spy(memoryCache5.store, 'get');
+                });
+
+                afterEach(function() {
+                    memoryCache5.store.get.restore();
+                    testCallbacks.isReturnableValue.restore();
+                });
+
+                it("returns allowed values", function(done) {
+                    var name = 'foo';
+
+                    getCachedValue(name, function(err) {
+                        checkErr(err);
+                        assert.ok(memoryCache5.store.get.calledOnce);
+
+                        assert.ok(testCallbacks.isReturnableValue.called);
+
+                        getCachedValue(name, function(err, value) {
+                            checkErr(err);
+
+                            assert.equal('return_this', value);
+
+                            done();
+                        });
+                    });
+                });
+
+                it("returns non-allowed values because it's the only store", function(done) {
+                    var name = 'bar';
+
+                    getCachedValue(name, function(err, value) {
+                        checkErr(err);
+
+                        assert.ok(memoryCache5.store.get.calledOnce);
+
+                        assert.equal('do_not_return_this', value);
+
+                        getCachedValue(name, function(err, value) {
+                            checkErr(err);
+
+                            assert.equal('do_not_return_this', value);
+
+                            done();
+                        });
+                    });
+                });
+            });
         });
 
         describe("using two cache stores", function() {
@@ -833,6 +997,75 @@ describe("multiCaching", function() {
                                 assert.deepEqual(result, {name: name});
                                 done();
                             });
+                        });
+                    });
+                });
+            });
+
+            context("when we pass in an isReturnableValue function to the multicaching constructor", function() {
+                var testCallbacks = {
+                    isReturnableValue: function(value) {
+                        var x = value !== 'do_not_return_this' && value !== undefined;
+                        return x;
+                    }
+                };
+
+                function getValue(name, cb) {
+                    process.nextTick(function() {
+                        if (name === 'foo') {
+                            cb(null, 'return_this');
+                        } else {
+                            cb(null, 'do_not_return_this');
+                        }
+                    });
+                }
+
+                function getCachedValue(name, cb) {
+                    multiCache.wrap(key, function(cacheCb) {
+                        getValue(name, function(err, result) {
+                            cacheCb(err, result);
+                        });
+                    }, cb);
+                }
+
+                beforeEach(function() {
+                    sinon.spy(testCallbacks, 'isReturnableValue');
+                    sinon.spy(memoryCache.store, 'get');
+                    sinon.spy(memoryCache3.store, 'get');
+
+                    multiCache = multiCaching([memoryCache, memoryCache3],
+                        {isReturnableValue: testCallbacks.isReturnableValue});
+                });
+
+                afterEach(function() {
+                    memoryCache.store.get.restore();
+                    memoryCache3.store.get.restore();
+                    testCallbacks.isReturnableValue.restore();
+                });
+
+                it("doesn't continue to query for the value once it's found", function(done) {
+                    var name = 'foo';
+
+                    getCachedValue(name, function(err) {
+                        checkErr(err);
+                        //prime the cache
+                        assert.ok(memoryCache.store.get.calledOnce);
+
+                        assert.ok(memoryCache3.store.get.calledOnce);
+
+                        assert.ok(testCallbacks.isReturnableValue.calledTwice);
+
+                        getCachedValue(name, function(err, value) {
+                            checkErr(err);
+                            //it should only get called once more now that it's in the first cache.
+                            assert.ok(memoryCache.store.get.calledTwice);
+
+                            //the second store should not get called again.
+                            assert.ok(memoryCache3.store.get.calledOnce);
+
+                            assert.equal('return_this', value);
+
+                            done();
                         });
                     });
                 });
